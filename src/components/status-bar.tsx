@@ -1,61 +1,43 @@
 // QalClaude Status Bar Component
-// Shows connection status, agent info, and usage
 
-import React from "react"
-import { Box, Text } from "ink"
-
-interface Agent {
-  name: string
-  color: string
-  description: string
-}
+import { Show } from "solid-js"
+import { theme } from "../tui/app"
 
 interface StatusBarProps {
   connected: boolean
-  agent: Agent
-  usage: { input: number; output: number; cost: number }
-  showSidebarHint: boolean
+  agent: { name: string; color: string; description: string }
+  cwd: string
+  claudeVersion: string
 }
 
-export function StatusBar({ connected, agent, usage, showSidebarHint }: StatusBarProps) {
+export function StatusBar(props: StatusBarProps) {
   return (
-    <Box
-      borderStyle="single"
-      borderColor="gray"
-      paddingX={1}
+    <box
+      flexDirection="row"
       justifyContent="space-between"
+      paddingX={1}
+      borderStyle="single"
+      borderColor={theme.border}
+      flexShrink={0}
     >
-      {/* Left: Connection status */}
-      <Box>
-        <Text color={connected ? "green" : "red"}>
-          {connected ? "●" : "○"}
-        </Text>
-        <Text color="gray"> </Text>
-        <Text color={agent.color}>{agent.name}</Text>
-        <Text color="gray" dimColor> - {agent.description}</Text>
-      </Box>
+      {/* Left side */}
+      <box flexDirection="row" gap={1}>
+        <Show when={props.connected} fallback={
+          <text fg={theme.error}>● disconnected</text>
+        }>
+          <text fg={theme.success}>●</text>
+        </Show>
+        <text fg={props.agent.color} bold>{props.agent.name}</text>
+        <text fg={theme.textMuted}>- {props.agent.description}</text>
+      </box>
 
-      {/* Center: Hint */}
-      {showSidebarHint && (
-        <Box>
-          <Text color="gray" dimColor>Ctrl+S: show sidebar</Text>
-        </Box>
-      )}
-
-      {/* Right: Usage */}
-      <Box>
-        <Text color="gray">
-          {usage.input + usage.output > 0
-            ? `${(usage.input + usage.output).toLocaleString()} tokens`
-            : ""}
-        </Text>
-        {usage.cost > 0 && (
-          <>
-            <Text color="gray"> | </Text>
-            <Text color="green">${usage.cost.toFixed(4)}</Text>
-          </>
-        )}
-      </Box>
-    </Box>
+      {/* Right side */}
+      <box flexDirection="row" gap={2}>
+        <text fg={theme.textMuted}>{props.cwd}</text>
+        <Show when={props.claudeVersion}>
+          <text fg={theme.textMuted}>Claude {props.claudeVersion}</text>
+        </Show>
+      </box>
+    </box>
   )
 }

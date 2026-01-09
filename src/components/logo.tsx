@@ -1,37 +1,19 @@
-// QalClaude Logo Component
+// QalClaude Logo - ASCII art
 
-import React from "react"
-import { Box, Text } from "ink"
-
-const LOGO_LEFT = [
-  "                ",
-  "█▀▀█ █▀▀█ █░░  ",
-  "█░░█ █▀▀█ █░░  ",
-  "▀▀▀█ ▀░░▀ ▀▀▀  "
-]
-
-const LOGO_RIGHT = [
-  "              ",
-  "█▀▀█ █░░ █▀▀█ █░░█ █▀▀▄ █▀▀▀",
-  "█░░░ █░░ █▀▀█ █░░█ █░░█ █▀▀▀",
-  "▀▀▀▀ ▀▀▀ ▀░░▀ ░▀▀▀ ▀▀▀░ ▀▀▀▀"
-]
+import { theme } from "../tui/app"
 
 export function Logo() {
   return (
-    <Box flexDirection="column">
-      {LOGO_LEFT.map((line, i) => (
-        <Box key={i}>
-          <Text color="gray">{line}</Text>
-          <Text color="cyan" bold>{LOGO_RIGHT[i]}</Text>
-        </Box>
-      ))}
-    </Box>
-  )
-}
-
-export function SmallLogo() {
-  return (
-    <Text color="cyan" bold>QalClaude</Text>
+    <box flexDirection="column" alignItems="center">
+      <text fg={theme.primary} bold>
+        {`█▀▀█ █▀▀█ █░░  █▀▀█ █░░ █▀▀█ █░░█ █▀▀▄ █▀▀▀`}
+      </text>
+      <text fg={theme.primary} bold>
+        {`█░░█ █▀▀█ █░░  █░░░ █░░ █▀▀█ █░░█ █░░█ █▀▀▀`}
+      </text>
+      <text fg={theme.primary} bold>
+        {`▀▀▀█ ▀░░▀ ▀▀▀  ▀▀▀▀ ▀▀▀ ▀░░▀ ░▀▀▀ ▀▀▀░ ▀▀▀▀`}
+      </text>
+    </box>
   )
 }

@@ -1,29 +1,26 @@
 {
   "name": "qalclaude",
-  "version": "0.1.0",
-  "description": "Claude Code with qalcode's TUI - beautiful terminal interface for Claude",
-  "author": "fivelidz",
-  "license": "MIT",
+  "version": "0.2.0",
   "type": "module",
-  "main": "dist/index.js",
+  "description": "Claude Code with qalcode's beautiful TUI - OpenTUI/SolidJS version",
   "bin": {
-    "qalclaude": "dist/cli.js"
+    "qalclaude": "./bin/qalclaude"
   },
   "scripts": {
-    "dev": "bun run src/cli.ts",
-    "build": "bun build src/cli.ts --outdir dist --target node",
-    "test": "bun test"
+    "dev": "bun run --watch src/index.ts",
+    "build": "bun build src/index.ts --outdir dist --target node",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "ink": "^5.0.1",
-    "ink-spinner": "^5.0.0",
-    "react": "^18.3.1",
-    "@anthropic-ai/sdk": "^0.36.0"
+    "@opentui/core": "0.1.59",
+    "@opentui/solid": "0.1.59",
+    "solid-js": "1.9.5",
+    "opentui-spinner": "0.0.6",
+    "fuzzysort": "3.1.0",
+    "strip-ansi": "7.1.2"
   },
   "devDependencies": {
-    "@types/react": "^18.3.12",
-    "@types/node": "^22.10.0",
-    "typescript": "^5.7.2",
-    "bun-types": "^1.1.34"
+    "@types/bun": "latest",
+    "typescript": "5.7.3"
   }
 }

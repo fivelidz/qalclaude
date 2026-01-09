@@ -1,129 +1,109 @@
-// QalClaude TUI - Main App Component
-// Full-featured TUI combining Claude Code with qalcode's interface
+// QalClaude Main App - OpenTUI/SolidJS version
 
-import React, { useState, useEffect, useCallback, useMemo } from "react"
-import { Box, Text, useInput, useApp, useStdout } from "ink"
-import { ClaudeConnector, ClaudeSystemInit, ClaudeAssistantMessage, ClaudeResult } from "../claude/connector.js"
-import { Sidebar } from "../components/sidebar.js"
-import { ChatView } from "../components/chat-view.js"
-import { InputBox } from "../components/input-box.js"
-import { StatusBar } from "../components/status-bar.js"
-import { Logo } from "../components/logo.js"
-import { HelpDialog, AgentDialog, ModelDialog } from "../components/dialogs.js"
-import { CommandPalette } from "../components/command-palette.js"
-import { SessionList } from "../components/session-list.js"
-import { ToastContainer, useToasts } from "../components/toast.js"
-import { Spinner } from "../components/spinner.js"
-import { THEMES, THEME_NAMES, ThemeDialog } from "../components/themes.js"
-import { SettingsDialog, Settings, DEFAULT_SETTINGS } from "../components/settings.js"
-import { SubagentPanel, Subagent, SubagentStatus } from "../components/subagent-panel.js"
-import { UsageDisplay } from "../components/usage-display.js"
-import { MiniFileTree } from "../components/file-tree.js"
-import { TodoList, TodoItem, TodoStatus } from "../components/todo-list.js"
+import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js"
+import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
+import { Logo } from "../components/logo"
+import { Prompt } from "../components/prompt"
+import { MessageList } from "../components/message-list"
+import { Sidebar } from "../components/sidebar"
+import { StatusBar } from "../components/status-bar"
+import { Header } from "../components/header"
+import { createClaudeConnection, type ClaudeConnection } from "../claude/connection"
 
-interface Message {
+// Theme colors (Tokyo Night style)
+export const theme = {
+  primary: "#7aa2f7",
+  secondary: "#bb9af7",
+  accent: "#7dcfff",
+  success: "#9ece6a",
+  warning: "#e0af68",
+  error: "#f7768e",
+  text: "#c0caf5",
+  textMuted: "#565f89",
+  bg: "#1a1b26",
+  bgPanel: "#24283b",
+  border: "#3b4261",
+}
+
+// Agent definitions
+const AGENTS = [
+  { name: "coder", color: "#9ece6a", description: "Full development" },
+  { name: "yolo", color: "#f7768e", description: "No permissions" },
+  { name: "plan", color: "#7aa2f7", description: "Read-only planning" },
+  { name: "researcher", color: "#7dcfff", description: "Code exploration" },
+  { name: "architect", color: "#bb9af7", description: "System design" },
+  { name: "debugger", color: "#e0af68", description: "Bug fixing" },
+]
+
+export interface Message {
   role: "user" | "assistant" | "system" | "tool"
   content: string
   timestamp: Date
   toolName?: string
 }
 
+export interface TodoItem {
+  content: string
+  status: "pending" | "in_progress" | "completed"
+  activeForm: string
+}
+
 interface AppProps {
-  claude: ClaudeConnector
-  init: ClaudeSystemInit
+  model: string
+  agent?: string
+  permissionMode: string
 }
 
-interface Session {
-  id: string
-  title: string
-  updatedAt: Date
-  messageCount: number
-  cost: number
-}
-
-type DialogType = "none" | "help" | "agent" | "model" | "command" | "sessions" | "status" | "theme" | "settings" | "subagents" | "usage"
-
-const AGENTS = [
-  { name: "coder", color: "green", description: "Full development", permissionMode: "acceptEdits" },
-  { name: "yolo", color: "red", description: "No permissions", permissionMode: "bypassPermissions" },
-  { name: "plan", color: "blue", description: "Read-only planning", permissionMode: "plan" },
-  { name: "researcher", color: "cyan", description: "Code exploration", permissionMode: "plan" },
-  { name: "architect", color: "magenta", description: "System design", permissionMode: "plan" },
-  { name: "debugger", color: "yellow", description: "Bug fixing", permissionMode: "acceptEdits" },
-]
-
-const MODELS = [
-  "claude-opus-4-5-20251101",
-  "claude-sonnet-4-5-20250929",
-  "claude-sonnet-4-20250514",
-  "claude-haiku-4-5-20251001",
-]
-
-export function App({ claude, init }: AppProps) {
-  const { exit } = useApp()
-  const { stdout } = useStdout()
-  const { toasts, addToast, dismissToast } = useToasts()
+export function App(props: AppProps) {
+  const dimensions = useTerminalDimensions()
+  const keyboard = useKeyboard()
 
   // State
-  const [messages, setMessages] = useState<Message[]>([])
-  const [inputValue, setInputValue] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [currentAgent, setCurrentAgent] = useState(0)
-  const [currentModel, setCurrentModel] = useState(init.model)
-  const [showSidebar, setShowSidebar] = useState(true)
-  const [showLogo, setShowLogo] = useState(true)
-  const [dialog, setDialog] = useState<DialogType>("none")
-  const [themeName, setThemeName] = useState("tokyoNight")
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
-  const [usage, setUsage] = useState({ input: 0, output: 0, cost: 0 })
-  const [streamingContent, setStreamingContent] = useState("")
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [promptHistory, setPromptHistory] = useState<string[]>([])
-  const [historyIndex, setHistoryIndex] = useState(-1)
-  const [subagents, setSubagents] = useState<Subagent[]>([])
-  const [workingDir] = useState(process.cwd())
-  const [todos, setTodos] = useState<TodoItem[]>([])
-  const [interruptCount, setInterruptCount] = useState(0)
+  const [messages, setMessages] = createSignal<Message[]>([])
+  const [inputValue, setInputValue] = createSignal("")
+  const [isLoading, setIsLoading] = createSignal(false)
+  const [currentAgent, setCurrentAgent] = createSignal(0)
+  const [showSidebar, setShowSidebar] = createSignal(true)
+  const [showLogo, setShowLogo] = createSignal(true)
+  const [streamingContent, setStreamingContent] = createSignal("")
+  const [todos, setTodos] = createSignal<TodoItem[]>([])
+  const [usage, setUsage] = createSignal({ input: 0, output: 0, cost: 0 })
+  const [interruptCount, setInterruptCount] = createSignal(0)
+  const [connected, setConnected] = createSignal(false)
+  const [claudeVersion, setClaudeVersion] = createSignal("")
 
-  const theme = THEMES[themeName] || THEMES.catppuccin
+  // Claude connection
+  let claude: ClaudeConnection | null = null
 
-  // Commands for command palette
-  const commands = useMemo(() => [
-    { id: "agent", label: "Switch Agent", category: "Agent", keybind: "Ctrl+A", action: () => setDialog("agent") },
-    { id: "agent-cycle", label: "Cycle Agent", category: "Agent", keybind: "Tab", action: () => setCurrentAgent(p => (p + 1) % AGENTS.length) },
-    { id: "subagents", label: "Subagent Panel", category: "Agent", keybind: "Ctrl+U", action: () => setDialog("subagents") },
-    { id: "model", label: "Switch Model", category: "Model", keybind: "Ctrl+M", action: () => setDialog("model") },
-    { id: "sessions", label: "Session List", category: "Session", keybind: "Ctrl+O", action: () => setDialog("sessions") },
-    { id: "new-session", label: "New Session", category: "Session", keybind: "Ctrl+N", action: () => { setMessages([]); setShowLogo(true); addToast("New session started", "success") } },
-    { id: "clear", label: "Clear Chat", category: "Session", keybind: "Ctrl+L", action: () => { setMessages([]); setShowLogo(true) } },
-    { id: "sidebar", label: "Toggle Sidebar", category: "View", keybind: "Ctrl+B", action: () => setShowSidebar(p => !p) },
-    { id: "theme", label: "Change Theme", category: "View", keybind: "Ctrl+T", action: () => setDialog("theme") },
-    { id: "settings", label: "Settings", category: "View", keybind: "Ctrl+,", action: () => setDialog("settings") },
-    { id: "usage", label: "Usage Stats", category: "System", keybind: "Ctrl+U", action: () => setDialog("usage") },
-    { id: "status", label: "View Status", category: "System", keybind: "Ctrl+I", action: () => setDialog("status") },
-    { id: "help", label: "Show Help", category: "System", keybind: "?", action: () => setDialog("help") },
-    { id: "exit", label: "Exit", category: "System", keybind: "Ctrl+C", action: () => { claude.disconnect(); exit() } },
-  ], [exit, claude, addToast])
+  onMount(async () => {
+    claude = createClaudeConnection({
+      model: props.model,
+      agent: props.agent,
+      permissionMode: props.permissionMode,
+    })
 
-  // Hide logo after first message
-  useEffect(() => {
-    if (messages.length > 0) setShowLogo(false)
-  }, [messages])
+    // Set up event handlers
+    claude.on("init", (data) => {
+      setConnected(true)
+      setClaudeVersion(data.claude_code_version)
+    })
 
-  // Handle Claude events
-  useEffect(() => {
-    const handleAssistant = (event: ClaudeAssistantMessage) => {
-      const content = event.message.content
-        .filter(c => c.type === "text")
-        .map(c => c.text)
+    claude.on("assistant", (data) => {
+      const text = data.message.content
+        .filter((c: any) => c.type === "text")
+        .map((c: any) => c.text)
         .join("")
 
-      if (content) {
-        setStreamingContent(prev => prev + content)
+      if (text) {
+        setStreamingContent(prev => prev + text)
       }
 
-      const toolUses = event.message.content.filter(c => c.type === "tool_use")
+      // Handle tool uses
+      const toolUses = data.message.content.filter((c: any) => c.type === "tool_use")
       for (const tool of toolUses) {
+        if (tool.name === "TodoWrite" && tool.input?.todos) {
+          setTodos(tool.input.todos)
+        }
         if (tool.name) {
           setMessages(prev => [...prev, {
             role: "tool",
@@ -134,227 +114,118 @@ export function App({ claude, init }: AppProps) {
         }
       }
 
-      if (event.message.usage) {
+      if (data.message.usage) {
         setUsage(prev => ({
-          input: prev.input + (event.message.usage.input_tokens || 0),
-          output: prev.output + (event.message.usage.output_tokens || 0),
+          input: prev.input + (data.message.usage.input_tokens || 0),
+          output: prev.output + (data.message.usage.output_tokens || 0),
           cost: prev.cost
         }))
       }
-    }
+    })
 
-    const handleResult = (event: ClaudeResult) => {
+    claude.on("result", (data) => {
       setIsLoading(false)
-
-      if (streamingContent || event.result) {
+      const content = streamingContent()
+      if (content || data.result) {
         setMessages(prev => [...prev, {
           role: "assistant",
-          content: streamingContent || event.result,
+          content: content || data.result,
           timestamp: new Date()
         }])
         setStreamingContent("")
       }
+      setUsage(prev => ({ ...prev, cost: data.total_cost_usd }))
+    })
 
-      setUsage(prev => ({ ...prev, cost: event.total_cost_usd }))
+    claude.on("error", () => {
+      setIsLoading(false)
+    })
+
+    // Connect
+    try {
+      await claude.connect()
+    } catch (err) {
+      console.error("Failed to connect:", err)
     }
+  })
 
-    const handleToolResult = (event: any) => {
-      // Check for TodoWrite events
-      if (event.tool_name === "TodoWrite" || event.toolName === "TodoWrite") {
-        try {
-          // Parse the todos from the event
-          if (event.input?.todos) {
-            setTodos(event.input.todos)
-          }
-        } catch {
-          // Not a valid todo event
-        }
-      }
-
-      if (event.content) {
-        setMessages(prev => {
-          const updated = [...prev]
-          for (let i = updated.length - 1; i >= 0; i--) {
-            if (updated[i].role === "tool" && updated[i].toolName) {
-              updated[i].content = event.content.slice(0, 200) + (event.content.length > 200 ? "..." : "")
-              break
-            }
-          }
-          return updated
-        })
-      }
-    }
-
-    // Handle tool_use events for todos
-    const handleToolUse = (event: any) => {
-      if (event.tool_name === "TodoWrite" && event.input?.todos) {
-        setTodos(event.input.todos)
-      }
-    }
-
-    claude.on("assistant", handleAssistant)
-    claude.on("result", handleResult)
-    claude.on("tool_result", handleToolResult)
-    claude.on("tool_use", handleToolUse)
-
-    return () => {
-      claude.off("assistant", handleAssistant)
-      claude.off("result", handleResult)
-      claude.off("tool_result", handleToolResult)
-      claude.off("tool_use", handleToolUse)
-    }
-  }, [claude, streamingContent])
+  onCleanup(() => {
+    claude?.disconnect()
+  })
 
   // Reset interrupt count after timeout
-  useEffect(() => {
-    if (interruptCount > 0) {
+  createEffect(() => {
+    if (interruptCount() > 0) {
       const timer = setTimeout(() => setInterruptCount(0), 3000)
       return () => clearTimeout(timer)
     }
-  }, [interruptCount])
+  })
 
-  // Keyboard handler
-  useInput((input, key) => {
-    // Escape: interrupt running operation (press twice to confirm)
-    if (key.escape) {
-      if (isLoading) {
-        if (interruptCount >= 1) {
-          // Second press - actually interrupt
-          claude.interrupt()
+  // Hide logo after first message
+  createEffect(() => {
+    if (messages().length > 0) {
+      setShowLogo(false)
+    }
+  })
+
+  // Keyboard handling
+  createEffect(() => {
+    const key = keyboard()
+    if (!key) return
+
+    // Escape: interrupt
+    if (key.key === "escape") {
+      if (isLoading()) {
+        if (interruptCount() >= 1) {
+          claude?.interrupt()
           setIsLoading(false)
           setStreamingContent("")
-          addToast("Interrupted", "warning")
           setInterruptCount(0)
         } else {
-          // First press - show warning
           setInterruptCount(1)
-          addToast("Press Esc again to interrupt", "info")
         }
-        return
       }
-      // If dialog is open, close it
-      if (dialog !== "none") {
-        setDialog("none")
-        return
-      }
+      return
     }
 
-    if (dialog !== "none") return
-
-    // Exit
-    if (key.ctrl && input === "c") {
-      if (isLoading) {
-        claude.interrupt()
+    // Ctrl+C: exit or interrupt
+    if (key.ctrl && key.key === "c") {
+      if (isLoading()) {
+        claude?.interrupt()
         setIsLoading(false)
-        addToast("Interrupted", "warning")
-        return
+      } else {
+        claude?.disconnect()
+        process.exit(0)
       }
-      claude.disconnect()
-      exit()
       return
     }
 
     // Tab: cycle agents
-    if (key.tab) {
+    if (key.key === "tab") {
       const next = key.shift
-        ? (currentAgent - 1 + AGENTS.length) % AGENTS.length
-        : (currentAgent + 1) % AGENTS.length
+        ? (currentAgent() - 1 + AGENTS.length) % AGENTS.length
+        : (currentAgent() + 1) % AGENTS.length
       setCurrentAgent(next)
-      addToast(`Switched to ${AGENTS[next].name}`, "info")
       return
     }
 
-    // Ctrl+K or Ctrl+P: command palette
-    if (key.ctrl && (input === "k" || input === "p")) {
-      setDialog("command")
-      return
-    }
-
-    // Ctrl+A: agent dialog
-    if (key.ctrl && input === "a") {
-      setDialog("agent")
-      return
-    }
-
-    // Ctrl+M: model dialog
-    if (key.ctrl && input === "m") {
-      setDialog("model")
-      return
-    }
-
-    // Ctrl+O: sessions
-    if (key.ctrl && input === "o") {
-      setDialog("sessions")
-      return
-    }
-
-    // Ctrl+N: new session
-    if (key.ctrl && input === "n") {
-      setMessages([])
-      setShowLogo(true)
-      addToast("New session started", "success")
+    // Ctrl+B: toggle sidebar
+    if (key.ctrl && key.key === "b") {
+      setShowSidebar(prev => !prev)
       return
     }
 
     // Ctrl+L: clear
-    if (key.ctrl && input === "l") {
+    if (key.ctrl && key.key === "l") {
       setMessages([])
       setShowLogo(true)
       return
     }
-
-    // Ctrl+B: sidebar
-    if (key.ctrl && input === "b") {
-      setShowSidebar(p => !p)
-      return
-    }
-
-    // Ctrl+T: theme dialog
-    if (key.ctrl && input === "t") {
-      setDialog("theme")
-      return
-    }
-
-    // Ctrl+U: subagents
-    if (key.ctrl && input === "u") {
-      setDialog("subagents")
-      return
-    }
-
-    // Ctrl+I: status
-    if (key.ctrl && input === "i") {
-      setDialog("status")
-      return
-    }
-
-    // ?: help
-    if (input === "?" && !isLoading) {
-      setDialog("help")
-      return
-    }
-
-    // Up/Down: prompt history
-    if (key.upArrow && promptHistory.length > 0) {
-      const newIndex = historyIndex < promptHistory.length - 1 ? historyIndex + 1 : historyIndex
-      setHistoryIndex(newIndex)
-      setInputValue(promptHistory[promptHistory.length - 1 - newIndex] || "")
-      return
-    }
-
-    if (key.downArrow && historyIndex > 0) {
-      const newIndex = historyIndex - 1
-      setHistoryIndex(newIndex)
-      setInputValue(promptHistory[promptHistory.length - 1 - newIndex] || "")
-      return
-    }
   })
 
-  const handleSubmit = useCallback(async (text: string) => {
-    if (!text.trim() || isLoading) return
-
-    // Add to history
-    setPromptHistory(prev => [...prev, text])
-    setHistoryIndex(-1)
+  // Submit handler
+  const handleSubmit = async (text: string) => {
+    if (!text.trim() || isLoading()) return
 
     setMessages(prev => [...prev, {
       role: "user",
@@ -367,7 +238,7 @@ export function App({ claude, init }: AppProps) {
     setStreamingContent("")
 
     try {
-      await claude.send(text)
+      await claude?.send(text)
     } catch (err) {
       setMessages(prev => [...prev, {
         role: "system",
@@ -375,250 +246,73 @@ export function App({ claude, init }: AppProps) {
         timestamp: new Date()
       }])
       setIsLoading(false)
-      addToast(`Error: ${err}`, "error")
     }
-  }, [claude, isLoading, addToast])
-
-  // Dialog handlers
-  const handleAgentSelect = (index: number) => {
-    setCurrentAgent(index)
-    addToast(`Agent: ${AGENTS[index].name}`, "success")
   }
 
-  const handleModelSelect = (model: string) => {
-    setCurrentModel(model)
-    addToast(`Model: ${model}`, "success")
-  }
-
-  // Render dialogs
-  if (dialog === "help") {
-    return <HelpDialog onClose={() => setDialog("none")} />
-  }
-
-  if (dialog === "agent") {
-    return (
-      <AgentDialog
-        agents={AGENTS}
-        current={currentAgent}
-        onSelect={handleAgentSelect}
-        onClose={() => setDialog("none")}
-      />
-    )
-  }
-
-  if (dialog === "model") {
-    return (
-      <ModelDialog
-        models={MODELS}
-        current={currentModel}
-        onSelect={handleModelSelect}
-        onClose={() => setDialog("none")}
-      />
-    )
-  }
-
-  if (dialog === "command") {
-    return (
-      <CommandPalette
-        commands={commands}
-        onClose={() => setDialog("none")}
-      />
-    )
-  }
-
-  if (dialog === "sessions") {
-    return (
-      <SessionList
-        sessions={sessions}
-        currentId={init.session_id}
-        onSelect={(id) => addToast(`Session: ${id}`, "info")}
-        onDelete={(id) => { setSessions(p => p.filter(s => s.id !== id)); addToast("Session deleted", "warning") }}
-        onRename={(id, name) => { setSessions(p => p.map(s => s.id === id ? {...s, title: name} : s)); addToast("Session renamed", "success") }}
-        onClose={() => setDialog("none")}
-      />
-    )
-  }
-
-  if (dialog === "status") {
-    return (
-      <Box flexDirection="column" borderStyle="double" borderColor={theme.secondary} padding={1}>
-        <Text color={theme.secondary} bold>System Status</Text>
-        <Box marginTop={1} flexDirection="column">
-          <Text>Claude Version: {init.claude_code_version}</Text>
-          <Text>Model: {currentModel}</Text>
-          <Text>Agent: {AGENTS[currentAgent].name}</Text>
-          <Text>Session: {init.session_id}</Text>
-          <Text>Tools: {init.tools.length}</Text>
-          <Text>Available Agents: {init.agents.join(", ")}</Text>
-          <Text>Theme: {theme.name}</Text>
-          <Box marginTop={1}>
-            <UsageDisplay input={usage.input} output={usage.output} cost={usage.cost} />
-          </Box>
-        </Box>
-        <Box marginTop={1}>
-          <Text color="gray" dimColor>Press Esc to close</Text>
-        </Box>
-      </Box>
-    )
-  }
-
-  if (dialog === "theme") {
-    return (
-      <ThemeDialog
-        current={themeName}
-        onSelect={(name) => { setThemeName(name); addToast(`Theme: ${THEMES[name].name}`, "success") }}
-        onClose={() => setDialog("none")}
-      />
-    )
-  }
-
-  if (dialog === "settings") {
-    return (
-      <SettingsDialog
-        settings={settings}
-        onUpdate={(s) => { setSettings(s); addToast("Settings saved", "success") }}
-        onClose={() => setDialog("none")}
-      />
-    )
-  }
-
-  if (dialog === "subagents") {
-    return (
-      <SubagentPanel
-        subagents={subagents}
-        availableTypes={["explore", "git", "docs", "test", "general"]}
-        onSpawn={(type, prompt) => {
-          const id = `subagent-${Date.now()}`
-          setSubagents(prev => [...prev, {
-            id,
-            type,
-            status: "running",
-            description: prompt,
-            startTime: new Date()
-          }])
-          addToast(`Spawned ${type} subagent`, "info")
-        }}
-        onCancel={(id) => {
-          setSubagents(prev => prev.filter(s => s.id !== id))
-          addToast("Subagent cancelled", "warning")
-        }}
-        onClose={() => setDialog("none")}
-      />
-    )
-  }
-
-  if (dialog === "usage") {
-    return (
-      <Box flexDirection="column" borderStyle="double" borderColor={theme.secondary} padding={1}>
-        <Text color={theme.secondary} bold>Usage Statistics</Text>
-        <Box marginTop={1}>
-          <UsageDisplay input={usage.input} output={usage.output} cost={usage.cost} />
-        </Box>
-        <Box marginTop={1} flexDirection="column">
-          <Text>Session Cost: <Text color="green">${usage.cost.toFixed(4)}</Text></Text>
-          <Text>Tokens Used: <Text color="cyan">{(usage.input + usage.output).toLocaleString()}</Text></Text>
-          <Text>Input: <Text color="blue">{usage.input.toLocaleString()}</Text></Text>
-          <Text>Output: <Text color="magenta">{usage.output.toLocaleString()}</Text></Text>
-        </Box>
-        <Box marginTop={1}>
-          <Text color="gray" dimColor>Press Esc to close</Text>
-        </Box>
-      </Box>
-    )
-  }
-
-  const termHeight = stdout?.rows || 24
+  const agent = () => AGENTS[currentAgent()]
+  const cwd = process.cwd()
 
   return (
-    <Box flexDirection="column" height={termHeight}>
-      {/* Toast notifications */}
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-
+    <box flexDirection="column" width="100%" height="100%">
       {/* Header */}
-      <Box borderStyle="single" borderColor={theme.secondary} paddingX={1} justifyContent="space-between">
-        <Box>
-          <Text bold color={theme.secondary}>QalClaude</Text>
-          <Text color="gray"> │ </Text>
-          <Text color={AGENTS[currentAgent].color} bold>{AGENTS[currentAgent].name}</Text>
-          <Text color="gray" dimColor> {AGENTS[currentAgent].description}</Text>
-          {isLoading && (
-            <>
-              <Text color="gray"> │ </Text>
-              <Spinner type="dots" color="yellow" />
-              {interruptCount > 0 && <Text color="red"> ESC to stop</Text>}
-            </>
-          )}
-          {todos.length > 0 && (
-            <>
-              <Text color="gray"> │ </Text>
-              <TodoStatus todos={todos} />
-            </>
-          )}
-        </Box>
-        <Box>
-          <Text color="gray" dimColor>{currentModel.replace("claude-", "")}</Text>
-          <Text color="gray"> │ </Text>
-          <Text color={theme.success}>${usage.cost.toFixed(4)}</Text>
-        </Box>
-      </Box>
+      <Header
+        agent={agent()}
+        model={props.model}
+        usage={usage()}
+        isLoading={isLoading()}
+        interruptCount={interruptCount()}
+        todos={todos()}
+      />
 
       {/* Main content */}
-      <Box flexGrow={1} flexDirection="row">
+      <box flexDirection="row" flexGrow={1}>
         {/* Sidebar */}
-        {showSidebar && (
+        <Show when={showSidebar()}>
           <Sidebar
             agents={AGENTS}
-            currentAgent={currentAgent}
-            tools={init.tools}
-            usage={usage}
-            cwd={workingDir}
-            theme={theme}
+            currentAgent={currentAgent()}
+            usage={usage()}
+            cwd={cwd}
           />
-        )}
+        </Show>
 
         {/* Chat area */}
-        <Box flexDirection="column" flexGrow={1}>
-          {showLogo && messages.length === 0 ? (
-            <Box flexDirection="column" alignItems="center" justifyContent="center" flexGrow={1} padding={2}>
-              <Logo />
-              <Box marginTop={1}>
-                <Text color={theme.muted}>Claude Code with a beautiful TUI</Text>
-              </Box>
-              <Box marginTop={1} flexDirection="column" alignItems="center">
-                <Text color={theme.muted} dimColor>Ctrl+K: commands │ Tab: agents │ ?: help</Text>
-                <Text color={theme.muted} dimColor>Ctrl+A: agent │ Ctrl+M: model │ Ctrl+T: theme</Text>
-                <Text color={theme.muted} dimColor>Ctrl+U: subagents │ Ctrl+O: sessions │ Ctrl+B: sidebar</Text>
-              </Box>
-              <Box marginTop={1}>
-                <Text color={theme.accent}>Theme: {theme.name}</Text>
-              </Box>
-            </Box>
-          ) : (
-            <ChatView
-              messages={messages}
-              streamingContent={streamingContent}
-              isLoading={isLoading}
+        <box flexDirection="column" flexGrow={1}>
+          <Show when={showLogo() && messages().length === 0} fallback={
+            <MessageList
+              messages={messages()}
+              streamingContent={streamingContent()}
+              isLoading={isLoading()}
             />
-          )}
+          }>
+            <box flexGrow={1} justifyContent="center" alignItems="center" gap={1}>
+              <Logo />
+              <text fg={theme.textMuted}>Claude Code with qalcode's beautiful TUI</text>
+              <box gap={1} flexDirection="column" alignItems="center">
+                <text fg={theme.textMuted}>Tab: agents │ Ctrl+K: commands │ Ctrl+B: sidebar</text>
+                <text fg={theme.textMuted}>Escape: interrupt │ Ctrl+C: exit</text>
+              </box>
+            </box>
+          </Show>
 
           {/* Input */}
-          <InputBox
-            value={inputValue}
+          <Prompt
+            value={inputValue()}
             onChange={setInputValue}
             onSubmit={handleSubmit}
-            isLoading={isLoading}
-            placeholder={`Message ${AGENTS[currentAgent].name}... (Ctrl+K for commands)`}
+            isLoading={isLoading()}
+            placeholder={`Message ${agent().name}...`}
           />
-        </Box>
-      </Box>
+        </box>
+      </box>
 
       {/* Status bar */}
       <StatusBar
-        connected={claude.connected}
-        agent={AGENTS[currentAgent]}
-        usage={usage}
-        showSidebarHint={!showSidebar}
+        connected={connected()}
+        agent={agent()}
+        cwd={cwd}
+        claudeVersion={claudeVersion()}
       />
-    </Box>
+    </box>
   )
 }
