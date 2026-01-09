@@ -1,10 +1,17 @@
 // QalClaude Header Component
 
 import { Show } from "solid-js"
-import { theme, type TodoItem } from "../tui/app"
+import { useTheme, defaultTheme } from "../context/theme"
+import type { Agent } from "../context/agents"
+
+interface TodoItem {
+  content: string
+  status: string
+  activeForm?: string
+}
 
 interface HeaderProps {
-  agent: { name: string; color: string; description: string }
+  agent: Agent
   model: string
   usage: { input: number; output: number; cost: number }
   isLoading: boolean
@@ -13,8 +20,14 @@ interface HeaderProps {
 }
 
 export function Header(props: HeaderProps) {
-  const inProgressTodo = () => props.todos.find(t => t.status === "in_progress")
-  const completedCount = () => props.todos.filter(t => t.status === "completed").length
+  let theme = defaultTheme
+  try {
+    const ctx = useTheme()
+    theme = ctx.theme
+  } catch {}
+
+  const inProgressTodo = () => props.todos.find((t) => t.status === "in_progress")
+  const completedCount = () => props.todos.filter((t) => t.status === "completed").length
 
   return (
     <box
@@ -44,9 +57,14 @@ export function Header(props: HeaderProps) {
         {/* Todo status */}
         <Show when={props.todos.length > 0}>
           <text fg={theme.textMuted}>│</text>
-          <Show when={inProgressTodo()} fallback={
-            <text fg={theme.success}>● {completedCount()}/{props.todos.length} tasks</text>
-          }>
+          <Show
+            when={inProgressTodo()}
+            fallback={
+              <text fg={theme.success}>
+                ● {completedCount()}/{props.todos.length} tasks
+              </text>
+            }
+          >
             <text fg={theme.warning}>◐ {inProgressTodo()!.activeForm}</text>
           </Show>
         </Show>
