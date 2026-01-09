@@ -11,7 +11,7 @@ interface MessageListProps {
 
 export function MessageList(props: MessageListProps) {
   return (
-    <box flexDirection="column" flexGrow={1} overflow="scroll" paddingX={1}>
+    <box flexDirection="column" flexGrow={1} overflow="scroll" paddingLeft={1} paddingRight={1}>
       <For each={props.messages}>
         {(message) => <MessageItem message={message} />}
       </For>
@@ -19,7 +19,7 @@ export function MessageList(props: MessageListProps) {
       {/* Streaming content */}
       <Show when={props.streamingContent}>
         <box marginTop={1}>
-          <text fg={theme.secondary} bold>Assistant</text>
+          <text fg={theme.secondary}><b>Assistant</b></text>
         </box>
         <box paddingLeft={2}>
           <text fg={theme.text}>{props.streamingContent}</text>
@@ -56,8 +56,8 @@ function MessageItem(props: { message: Message }) {
     <box flexDirection="column" marginTop={1}>
       {/* Role header */}
       <box>
-        <text fg={roleColors[props.message.role]} bold>
-          {props.message.toolName || roleLabels[props.message.role]}
+        <text fg={roleColors[props.message.role]}>
+          <b>{props.message.toolName || roleLabels[props.message.role]}</b>
         </text>
         <text fg={theme.textMuted}> {formatTime(props.message.timestamp)}</text>
       </box>
@@ -65,7 +65,7 @@ function MessageItem(props: { message: Message }) {
       {/* Content */}
       <box paddingLeft={2}>
         <Show when={props.message.role === "tool"} fallback={
-          <text fg={theme.text} wrap="wrap">{props.message.content}</text>
+          <text fg={theme.text}>{props.message.content}</text>
         }>
           <text fg={theme.textMuted}>{props.message.content}</text>
         </Show>

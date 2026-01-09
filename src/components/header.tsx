@@ -20,15 +20,16 @@ export function Header(props: HeaderProps) {
     <box
       flexDirection="row"
       justifyContent="space-between"
-      paddingX={1}
+      paddingLeft={1}
+      paddingRight={1}
       borderStyle="single"
       borderColor={theme.border}
     >
       {/* Left side */}
       <box flexDirection="row" gap={1}>
-        <text fg={theme.primary} bold>QalClaude</text>
+        <text fg={theme.primary}><b>QalClaude</b></text>
         <text fg={theme.textMuted}>│</text>
-        <text fg={props.agent.color} bold>{props.agent.name}</text>
+        <text fg={props.agent.color}><b>{props.agent.name}</b></text>
         <text fg={theme.textMuted}>{props.agent.description}</text>
 
         {/* Loading indicator */}

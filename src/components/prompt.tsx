@@ -1,7 +1,7 @@
 // QalClaude Prompt Input Component
 
-import { createSignal, createEffect, Show } from "solid-js"
-import { useKeyboard } from "@opentui/solid"
+import { createSignal, Show } from "solid-js"
+import { useKeyHandler } from "@opentui/solid"
 import { theme } from "../tui/app"
 
 interface PromptProps {
@@ -13,12 +13,10 @@ interface PromptProps {
 }
 
 export function Prompt(props: PromptProps) {
-  const keyboard = useKeyboard()
   const [focused, setFocused] = createSignal(true)
 
   // Handle keyboard input
-  createEffect(() => {
-    const key = keyboard()
+  useKeyHandler((key: any) => {
     if (!key || props.isLoading) return
 
     // Enter: submit (without shift)
@@ -54,7 +52,8 @@ export function Prompt(props: PromptProps) {
       flexDirection="column"
       borderStyle="single"
       borderColor={props.isLoading ? theme.textMuted : theme.primary}
-      paddingX={1}
+      paddingLeft={1}
+      paddingRight={1}
       flexShrink={0}
     >
       {/* Input line */}

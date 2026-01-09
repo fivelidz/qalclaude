@@ -5,14 +5,14 @@ import { theme } from "../tui/app"
 export function Logo() {
   return (
     <box flexDirection="column" alignItems="center">
-      <text fg={theme.primary} bold>
-        {`█▀▀█ █▀▀█ █░░  █▀▀█ █░░ █▀▀█ █░░█ █▀▀▄ █▀▀▀`}
+      <text fg={theme.primary}>
+        <b>{`█▀▀█ █▀▀█ █░░  █▀▀█ █░░ █▀▀█ █░░█ █▀▀▄ █▀▀▀`}</b>
       </text>
-      <text fg={theme.primary} bold>
-        {`█░░█ █▀▀█ █░░  █░░░ █░░ █▀▀█ █░░█ █░░█ █▀▀▀`}
+      <text fg={theme.primary}>
+        <b>{`█░░█ █▀▀█ █░░  █░░░ █░░ █▀▀█ █░░█ █░░█ █▀▀▀`}</b>
       </text>
-      <text fg={theme.primary} bold>
-        {`▀▀▀█ ▀░░▀ ▀▀▀  ▀▀▀▀ ▀▀▀ ▀░░▀ ░▀▀▀ ▀▀▀░ ▀▀▀▀`}
+      <text fg={theme.primary}>
+        <b>{`▀▀▀█ ▀░░▀ ▀▀▀  ▀▀▀▀ ▀▀▀ ▀░░▀ ░▀▀▀ ▀▀▀░ ▀▀▀▀`}</b>
       </text>
     </box>
   )

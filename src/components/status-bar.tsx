@@ -15,7 +15,8 @@ export function StatusBar(props: StatusBarProps) {
     <box
       flexDirection="row"
       justifyContent="space-between"
-      paddingX={1}
+      paddingLeft={1}
+      paddingRight={1}
       borderStyle="single"
       borderColor={theme.border}
       flexShrink={0}
@@ -27,7 +28,7 @@ export function StatusBar(props: StatusBarProps) {
         }>
           <text fg={theme.success}>●</text>
         </Show>
-        <text fg={props.agent.color} bold>{props.agent.name}</text>
+        <text fg={props.agent.color}><b>{props.agent.name}</b></text>
         <text fg={theme.textMuted}>- {props.agent.description}</text>
       </box>
 

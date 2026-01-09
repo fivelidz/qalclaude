@@ -1,7 +1,7 @@
 // QalClaude Main App - OpenTUI/SolidJS version
 
 import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js"
-import { useKeyboard, useTerminalDimensions } from "@opentui/solid"
+import { useKeyHandler, useTerminalDimensions } from "@opentui/solid"
 import { Logo } from "../components/logo"
 import { Prompt } from "../components/prompt"
 import { MessageList } from "../components/message-list"
@@ -56,7 +56,6 @@ interface AppProps {
 
 export function App(props: AppProps) {
   const dimensions = useTerminalDimensions()
-  const keyboard = useKeyboard()
 
   // State
   const [messages, setMessages] = createSignal<Message[]>([])
@@ -169,8 +168,7 @@ export function App(props: AppProps) {
   })
 
   // Keyboard handling
-  createEffect(() => {
-    const key = keyboard()
+  useKeyHandler((key: any) => {
     if (!key) return
 
     // Escape: interrupt
@@ -221,7 +219,7 @@ export function App(props: AppProps) {
       setShowLogo(true)
       return
     }
-  })
+  }, {})
 
   // Submit handler
   const handleSubmit = async (text: string) => {

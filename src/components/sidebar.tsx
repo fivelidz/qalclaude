@@ -36,11 +36,12 @@ export function Sidebar(props: SidebarProps) {
       width={24}
       borderStyle="single"
       borderColor={theme.border}
-      paddingX={1}
+      paddingLeft={1}
+      paddingRight={1}
     >
       {/* Agents */}
       <box marginBottom={1}>
-        <text fg={theme.primary} bold>Agents</text>
+        <text fg={theme.primary}><b>Agents</b></text>
         <text fg={theme.textMuted}> (Tab)</text>
       </box>
 
@@ -56,13 +57,13 @@ export function Sidebar(props: SidebarProps) {
 
       {/* Directory */}
       <box marginTop={1} marginBottom={1}>
-        <text fg={theme.primary} bold>Directory</text>
+        <text fg={theme.primary}><b>Directory</b></text>
       </box>
       <text fg={theme.textMuted}>{dirName()}</text>
 
       {/* Usage */}
       <box marginTop={1} flexDirection="column">
-        <text fg={theme.primary} bold>Usage</text>
+        <text fg={theme.primary}><b>Usage</b></text>
         <text fg={theme.textMuted}>In: {formatTokens(props.usage.input)}</text>
         <text fg={theme.textMuted}>Out: {formatTokens(props.usage.output)}</text>
         <text fg={theme.success}>${props.usage.cost.toFixed(4)}</text>
@@ -70,7 +71,7 @@ export function Sidebar(props: SidebarProps) {
 
       {/* Keys */}
       <box marginTop={1} flexDirection="column">
-        <text fg={theme.primary} bold>Keys</text>
+        <text fg={theme.primary}><b>Keys</b></text>
         <text fg={theme.textMuted}>Tab: agents</text>
         <text fg={theme.textMuted}>^B: sidebar</text>
         <text fg={theme.textMuted}>^L: clear</text>
