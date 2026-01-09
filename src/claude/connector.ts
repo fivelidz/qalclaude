@@ -112,7 +112,6 @@ export class ClaudeConnector extends EventEmitter {
         "--verbose",
         "--input-format", "stream-json",
         "--output-format", "stream-json",
-        "--include-partial-messages",
         "--model", this.model,
         "--permission-mode", this.permissionMode
       ]
@@ -138,7 +137,7 @@ export class ClaudeConnector extends EventEmitter {
           const event: ClaudeEvent = JSON.parse(line)
 
           // Handle system init
-          if (event.type === "system" && event.subtype === "init") {
+          if (event.type === "system" && (event as any).subtype === "init") {
             const init = event as ClaudeSystemInit
             this.sessionId = init.session_id
             this.tools = init.tools
@@ -182,8 +181,27 @@ export class ClaudeConnector extends EventEmitter {
         this.emit("exit", code)
       })
 
-      // Send empty message to trigger init
-      // Claude will send system init on connection
+      // Timeout for connection
+      const timeout = setTimeout(() => {
+        if (!initReceived) {
+          reject(new Error("Connection timeout - no init received from Claude"))
+        }
+      }, 30000)
+
+      // Clear timeout on init
+      this.once("init", () => clearTimeout(timeout))
+
+      // Send an initial empty user message to trigger init
+      // Claude streaming mode sends init on first interaction
+      setTimeout(() => {
+        if (!initReceived && this.process) {
+          const initMsg = JSON.stringify({
+            type: "user",
+            message: { role: "user", content: "" }
+          })
+          this.process.stdin.write(initMsg + "\n")
+        }
+      }, 100)
     })
   }
 

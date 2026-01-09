@@ -58,7 +58,19 @@ Built with love, combining Claude Code's power with qalcode's beautiful interfac
     cwd: process.cwd()
   })
 
+  // Log stderr from Claude
+  claude.on("stderr", (data: string) => {
+    if (data.includes("Error") || data.includes("error")) {
+      console.error("[Claude]", data.trim())
+    }
+  })
+
+  claude.on("error", (err: Error) => {
+    console.error("[Error]", err.message)
+  })
+
   // Connect and get init info
+  console.log("Connecting to Claude Code...")
   try {
     const init = await claude.connect()
     console.log(`Connected to Claude ${init.claude_code_version}`)
@@ -67,6 +79,7 @@ Built with love, combining Claude Code's power with qalcode's beautiful interfac
     console.log(`Tools: ${init.tools.length} available`)
     console.log(`Agents: ${init.agents.join(", ")}`)
     console.log("")
+    console.log("Starting TUI...")
 
     // Render TUI
     const { waitUntilExit } = render(

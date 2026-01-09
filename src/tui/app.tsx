@@ -503,6 +503,8 @@ export function App({ claude, init }: AppProps) {
             currentAgent={currentAgent}
             tools={init.tools}
             usage={usage}
+            cwd={workingDir}
+            theme={theme}
           />
         )}
 
