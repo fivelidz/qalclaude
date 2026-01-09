@@ -232,6 +232,17 @@ export class ClaudeConnector extends EventEmitter {
     this.process.stdin.write(controlMsg + "\n")
   }
 
+  // Interrupt the current operation
+  async interrupt(): Promise<void> {
+    if (!this.process) {
+      throw new Error("Not connected to Claude")
+    }
+
+    // Send interrupt signal
+    this.process.kill("SIGINT")
+    this.emit("interrupted")
+  }
+
   disconnect(): void {
     if (this.process) {
       this.process.stdin.end()

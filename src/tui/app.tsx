@@ -19,6 +19,7 @@ import { SettingsDialog, Settings, DEFAULT_SETTINGS } from "../components/settin
 import { SubagentPanel, Subagent, SubagentStatus } from "../components/subagent-panel.js"
 import { UsageDisplay } from "../components/usage-display.js"
 import { MiniFileTree } from "../components/file-tree.js"
+import { TodoList, TodoItem, TodoStatus } from "../components/todo-list.js"
 
 interface Message {
   role: "user" | "assistant" | "system" | "tool"
@@ -72,7 +73,7 @@ export function App({ claude, init }: AppProps) {
   const [showSidebar, setShowSidebar] = useState(true)
   const [showLogo, setShowLogo] = useState(true)
   const [dialog, setDialog] = useState<DialogType>("none")
-  const [themeName, setThemeName] = useState("catppuccin")
+  const [themeName, setThemeName] = useState("tokyoNight")
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [usage, setUsage] = useState({ input: 0, output: 0, cost: 0 })
   const [streamingContent, setStreamingContent] = useState("")
@@ -81,6 +82,8 @@ export function App({ claude, init }: AppProps) {
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [subagents, setSubagents] = useState<Subagent[]>([])
   const [workingDir] = useState(process.cwd())
+  const [todos, setTodos] = useState<TodoItem[]>([])
+  const [interruptCount, setInterruptCount] = useState(0)
 
   const theme = THEMES[themeName] || THEMES.catppuccin
 
@@ -156,6 +159,18 @@ export function App({ claude, init }: AppProps) {
     }
 
     const handleToolResult = (event: any) => {
+      // Check for TodoWrite events
+      if (event.tool_name === "TodoWrite" || event.toolName === "TodoWrite") {
+        try {
+          // Parse the todos from the event
+          if (event.input?.todos) {
+            setTodos(event.input.todos)
+          }
+        } catch {
+          // Not a valid todo event
+        }
+      }
+
       if (event.content) {
         setMessages(prev => {
           const updated = [...prev]
@@ -170,23 +185,70 @@ export function App({ claude, init }: AppProps) {
       }
     }
 
+    // Handle tool_use events for todos
+    const handleToolUse = (event: any) => {
+      if (event.tool_name === "TodoWrite" && event.input?.todos) {
+        setTodos(event.input.todos)
+      }
+    }
+
     claude.on("assistant", handleAssistant)
     claude.on("result", handleResult)
     claude.on("tool_result", handleToolResult)
+    claude.on("tool_use", handleToolUse)
 
     return () => {
       claude.off("assistant", handleAssistant)
       claude.off("result", handleResult)
       claude.off("tool_result", handleToolResult)
+      claude.off("tool_use", handleToolUse)
     }
   }, [claude, streamingContent])
 
+  // Reset interrupt count after timeout
+  useEffect(() => {
+    if (interruptCount > 0) {
+      const timer = setTimeout(() => setInterruptCount(0), 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [interruptCount])
+
   // Keyboard handler
   useInput((input, key) => {
+    // Escape: interrupt running operation (press twice to confirm)
+    if (key.escape) {
+      if (isLoading) {
+        if (interruptCount >= 1) {
+          // Second press - actually interrupt
+          claude.interrupt()
+          setIsLoading(false)
+          setStreamingContent("")
+          addToast("Interrupted", "warning")
+          setInterruptCount(0)
+        } else {
+          // First press - show warning
+          setInterruptCount(1)
+          addToast("Press Esc again to interrupt", "info")
+        }
+        return
+      }
+      // If dialog is open, close it
+      if (dialog !== "none") {
+        setDialog("none")
+        return
+      }
+    }
+
     if (dialog !== "none") return
 
     // Exit
     if (key.ctrl && input === "c") {
+      if (isLoading) {
+        claude.interrupt()
+        setIsLoading(false)
+        addToast("Interrupted", "warning")
+        return
+      }
       claude.disconnect()
       exit()
       return
@@ -479,11 +541,17 @@ export function App({ claude, init }: AppProps) {
           <Text color="gray"> │ </Text>
           <Text color={AGENTS[currentAgent].color} bold>{AGENTS[currentAgent].name}</Text>
           <Text color="gray" dimColor> {AGENTS[currentAgent].description}</Text>
-          {subagents.filter(s => s.status === "running").length > 0 && (
+          {isLoading && (
             <>
               <Text color="gray"> │ </Text>
               <Spinner type="dots" color="yellow" />
-              <Text color="yellow"> {subagents.filter(s => s.status === "running").length}</Text>
+              {interruptCount > 0 && <Text color="red"> ESC to stop</Text>}
+            </>
+          )}
+          {todos.length > 0 && (
+            <>
+              <Text color="gray"> │ </Text>
+              <TodoStatus todos={todos} />
             </>
           )}
         </Box>

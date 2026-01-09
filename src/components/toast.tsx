@@ -36,7 +36,7 @@ export function ToastItem({ toast, onDismiss }: ToastProps) {
   useEffect(() => {
     const timer = setTimeout(() => {
       onDismiss(toast.id)
-    }, toast.duration || 3000)
+    }, toast.duration || 1500) // Shorter default duration
 
     return () => clearTimeout(timer)
   }, [toast.id, toast.duration, onDismiss])
@@ -66,16 +66,16 @@ interface ToastContainerProps {
 export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
   if (toasts.length === 0) return null
 
+  // Only show the latest toast to avoid stacking issues
+  const latestToast = toasts[toasts.length - 1]
+
   return (
     <Box
       position="absolute"
-      flexDirection="column"
       marginTop={1}
-      marginRight={1}
+      marginLeft={2}
     >
-      {toasts.map(toast => (
-        <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
-      ))}
+      <ToastItem toast={latestToast} onDismiss={onDismiss} />
     </Box>
   )
 }
