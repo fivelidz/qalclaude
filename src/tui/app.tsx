@@ -14,6 +14,11 @@ import { CommandPalette } from "../components/command-palette.js"
 import { SessionList } from "../components/session-list.js"
 import { ToastContainer, useToasts } from "../components/toast.js"
 import { Spinner } from "../components/spinner.js"
+import { THEMES, THEME_NAMES, ThemeDialog } from "../components/themes.js"
+import { SettingsDialog, Settings, DEFAULT_SETTINGS } from "../components/settings.js"
+import { SubagentPanel, Subagent, SubagentStatus } from "../components/subagent-panel.js"
+import { UsageDisplay } from "../components/usage-display.js"
+import { MiniFileTree } from "../components/file-tree.js"
 
 interface Message {
   role: "user" | "assistant" | "system" | "tool"
@@ -35,7 +40,7 @@ interface Session {
   cost: number
 }
 
-type DialogType = "none" | "help" | "agent" | "model" | "command" | "sessions" | "status"
+type DialogType = "none" | "help" | "agent" | "model" | "command" | "sessions" | "status" | "theme" | "settings" | "subagents" | "usage"
 
 const AGENTS = [
   { name: "coder", color: "green", description: "Full development", permissionMode: "acceptEdits" },
@@ -67,23 +72,31 @@ export function App({ claude, init }: AppProps) {
   const [showSidebar, setShowSidebar] = useState(true)
   const [showLogo, setShowLogo] = useState(true)
   const [dialog, setDialog] = useState<DialogType>("none")
-  const [theme, setTheme] = useState<"dark" | "light">("dark")
+  const [themeName, setThemeName] = useState("catppuccin")
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [usage, setUsage] = useState({ input: 0, output: 0, cost: 0 })
   const [streamingContent, setStreamingContent] = useState("")
   const [sessions, setSessions] = useState<Session[]>([])
   const [promptHistory, setPromptHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
+  const [subagents, setSubagents] = useState<Subagent[]>([])
+  const [workingDir] = useState(process.cwd())
+
+  const theme = THEMES[themeName] || THEMES.catppuccin
 
   // Commands for command palette
   const commands = useMemo(() => [
     { id: "agent", label: "Switch Agent", category: "Agent", keybind: "Ctrl+A", action: () => setDialog("agent") },
     { id: "agent-cycle", label: "Cycle Agent", category: "Agent", keybind: "Tab", action: () => setCurrentAgent(p => (p + 1) % AGENTS.length) },
+    { id: "subagents", label: "Subagent Panel", category: "Agent", keybind: "Ctrl+U", action: () => setDialog("subagents") },
     { id: "model", label: "Switch Model", category: "Model", keybind: "Ctrl+M", action: () => setDialog("model") },
     { id: "sessions", label: "Session List", category: "Session", keybind: "Ctrl+O", action: () => setDialog("sessions") },
     { id: "new-session", label: "New Session", category: "Session", keybind: "Ctrl+N", action: () => { setMessages([]); setShowLogo(true); addToast("New session started", "success") } },
     { id: "clear", label: "Clear Chat", category: "Session", keybind: "Ctrl+L", action: () => { setMessages([]); setShowLogo(true) } },
-    { id: "sidebar", label: "Toggle Sidebar", category: "View", keybind: "Ctrl+S", action: () => setShowSidebar(p => !p) },
-    { id: "theme", label: "Toggle Theme", category: "View", keybind: "Ctrl+T", action: () => setTheme(p => p === "dark" ? "light" : "dark") },
+    { id: "sidebar", label: "Toggle Sidebar", category: "View", keybind: "Ctrl+B", action: () => setShowSidebar(p => !p) },
+    { id: "theme", label: "Change Theme", category: "View", keybind: "Ctrl+T", action: () => setDialog("theme") },
+    { id: "settings", label: "Settings", category: "View", keybind: "Ctrl+,", action: () => setDialog("settings") },
+    { id: "usage", label: "Usage Stats", category: "System", keybind: "Ctrl+U", action: () => setDialog("usage") },
     { id: "status", label: "View Status", category: "System", keybind: "Ctrl+I", action: () => setDialog("status") },
     { id: "help", label: "Show Help", category: "System", keybind: "?", action: () => setDialog("help") },
     { id: "exit", label: "Exit", category: "System", keybind: "Ctrl+C", action: () => { claude.disconnect(); exit() } },
@@ -228,16 +241,21 @@ export function App({ claude, init }: AppProps) {
       return
     }
 
-    // Ctrl+S: sidebar
-    if (key.ctrl && input === "s") {
+    // Ctrl+B: sidebar
+    if (key.ctrl && input === "b") {
       setShowSidebar(p => !p)
       return
     }
 
-    // Ctrl+T: theme
+    // Ctrl+T: theme dialog
     if (key.ctrl && input === "t") {
-      setTheme(p => p === "dark" ? "light" : "dark")
-      addToast(`Theme: ${theme === "dark" ? "light" : "dark"}`, "info")
+      setDialog("theme")
+      return
+    }
+
+    // Ctrl+U: subagents
+    if (key.ctrl && input === "u") {
+      setDialog("subagents")
       return
     }
 
@@ -361,8 +379,8 @@ export function App({ claude, init }: AppProps) {
 
   if (dialog === "status") {
     return (
-      <Box flexDirection="column" borderStyle="double" borderColor="cyan" padding={1}>
-        <Text color="cyan" bold>System Status</Text>
+      <Box flexDirection="column" borderStyle="double" borderColor={theme.secondary} padding={1}>
+        <Text color={theme.secondary} bold>System Status</Text>
         <Box marginTop={1} flexDirection="column">
           <Text>Claude Version: {init.claude_code_version}</Text>
           <Text>Model: {currentModel}</Text>
@@ -370,8 +388,75 @@ export function App({ claude, init }: AppProps) {
           <Text>Session: {init.session_id}</Text>
           <Text>Tools: {init.tools.length}</Text>
           <Text>Available Agents: {init.agents.join(", ")}</Text>
-          <Text>Tokens: {usage.input + usage.output}</Text>
-          <Text>Cost: ${usage.cost.toFixed(4)}</Text>
+          <Text>Theme: {theme.name}</Text>
+          <Box marginTop={1}>
+            <UsageDisplay input={usage.input} output={usage.output} cost={usage.cost} />
+          </Box>
+        </Box>
+        <Box marginTop={1}>
+          <Text color="gray" dimColor>Press Esc to close</Text>
+        </Box>
+      </Box>
+    )
+  }
+
+  if (dialog === "theme") {
+    return (
+      <ThemeDialog
+        current={themeName}
+        onSelect={(name) => { setThemeName(name); addToast(`Theme: ${THEMES[name].name}`, "success") }}
+        onClose={() => setDialog("none")}
+      />
+    )
+  }
+
+  if (dialog === "settings") {
+    return (
+      <SettingsDialog
+        settings={settings}
+        onUpdate={(s) => { setSettings(s); addToast("Settings saved", "success") }}
+        onClose={() => setDialog("none")}
+      />
+    )
+  }
+
+  if (dialog === "subagents") {
+    return (
+      <SubagentPanel
+        subagents={subagents}
+        availableTypes={["explore", "git", "docs", "test", "general"]}
+        onSpawn={(type, prompt) => {
+          const id = `subagent-${Date.now()}`
+          setSubagents(prev => [...prev, {
+            id,
+            type,
+            status: "running",
+            description: prompt,
+            startTime: new Date()
+          }])
+          addToast(`Spawned ${type} subagent`, "info")
+        }}
+        onCancel={(id) => {
+          setSubagents(prev => prev.filter(s => s.id !== id))
+          addToast("Subagent cancelled", "warning")
+        }}
+        onClose={() => setDialog("none")}
+      />
+    )
+  }
+
+  if (dialog === "usage") {
+    return (
+      <Box flexDirection="column" borderStyle="double" borderColor={theme.secondary} padding={1}>
+        <Text color={theme.secondary} bold>Usage Statistics</Text>
+        <Box marginTop={1}>
+          <UsageDisplay input={usage.input} output={usage.output} cost={usage.cost} />
+        </Box>
+        <Box marginTop={1} flexDirection="column">
+          <Text>Session Cost: <Text color="green">${usage.cost.toFixed(4)}</Text></Text>
+          <Text>Tokens Used: <Text color="cyan">{(usage.input + usage.output).toLocaleString()}</Text></Text>
+          <Text>Input: <Text color="blue">{usage.input.toLocaleString()}</Text></Text>
+          <Text>Output: <Text color="magenta">{usage.output.toLocaleString()}</Text></Text>
         </Box>
         <Box marginTop={1}>
           <Text color="gray" dimColor>Press Esc to close</Text>
@@ -388,17 +473,24 @@ export function App({ claude, init }: AppProps) {
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
       {/* Header */}
-      <Box borderStyle="single" borderColor="cyan" paddingX={1} justifyContent="space-between">
+      <Box borderStyle="single" borderColor={theme.secondary} paddingX={1} justifyContent="space-between">
         <Box>
-          <Text bold color="cyan">QalClaude</Text>
+          <Text bold color={theme.secondary}>QalClaude</Text>
           <Text color="gray"> │ </Text>
           <Text color={AGENTS[currentAgent].color} bold>{AGENTS[currentAgent].name}</Text>
           <Text color="gray" dimColor> {AGENTS[currentAgent].description}</Text>
+          {subagents.filter(s => s.status === "running").length > 0 && (
+            <>
+              <Text color="gray"> │ </Text>
+              <Spinner type="dots" color="yellow" />
+              <Text color="yellow"> {subagents.filter(s => s.status === "running").length}</Text>
+            </>
+          )}
         </Box>
         <Box>
           <Text color="gray" dimColor>{currentModel.replace("claude-", "")}</Text>
           <Text color="gray"> │ </Text>
-          <Text color="green">${usage.cost.toFixed(4)}</Text>
+          <Text color={theme.success}>${usage.cost.toFixed(4)}</Text>
         </Box>
       </Box>
 
@@ -420,11 +512,15 @@ export function App({ claude, init }: AppProps) {
             <Box flexDirection="column" alignItems="center" justifyContent="center" flexGrow={1} padding={2}>
               <Logo />
               <Box marginTop={1}>
-                <Text color="gray">Claude Code with a beautiful TUI</Text>
+                <Text color={theme.muted}>Claude Code with a beautiful TUI</Text>
               </Box>
               <Box marginTop={1} flexDirection="column" alignItems="center">
-                <Text color="gray" dimColor>Ctrl+K: commands │ Tab: agents │ ?: help</Text>
-                <Text color="gray" dimColor>Ctrl+A: agent │ Ctrl+M: model │ Ctrl+O: sessions</Text>
+                <Text color={theme.muted} dimColor>Ctrl+K: commands │ Tab: agents │ ?: help</Text>
+                <Text color={theme.muted} dimColor>Ctrl+A: agent │ Ctrl+M: model │ Ctrl+T: theme</Text>
+                <Text color={theme.muted} dimColor>Ctrl+U: subagents │ Ctrl+O: sessions │ Ctrl+B: sidebar</Text>
+              </Box>
+              <Box marginTop={1}>
+                <Text color={theme.accent}>Theme: {theme.name}</Text>
               </Box>
             </Box>
           ) : (
