@@ -11,6 +11,8 @@ import { DialogProvider, useDialog } from "../context/dialog"
 import { KeybindProvider, useKeybind } from "../context/keybind"
 import { CommandProvider, useCommand, type CommandOption } from "../context/command"
 import { AgentProvider, useAgent, AGENTS, type Agent } from "../context/agents"
+import { SyncProvider, useSync } from "../context/sync"
+import { GitProvider, useGit } from "../context/git"
 
 // Components
 import { Logo } from "../components/logo"
@@ -25,9 +27,18 @@ import { ToolOutput, type ToolCall } from "../components/tool-output"
 import { CommandPalette } from "../dialogs/command-palette"
 import { AgentSelect } from "../dialogs/agent-select"
 import { ThemeSelect } from "../dialogs/theme-select"
+import { DialogSessionList } from "../dialogs/session-list"
+import { DialogPermissions, PermissionPrompt } from "../dialogs/permissions"
+import { DialogMcp, DialogLsp } from "../dialogs/mcp"
+
+// Additional Components
+import { SubagentPanel, createSubagentPanelState } from "../components/subagent-panel"
+import { SplitPanelContainer, createSplitPanelState } from "../components/split-panel"
+import { SessionTabs } from "../components/session-tabs"
+import { Autocomplete, type AutocompleteRef } from "../components/autocomplete"
 
 // Claude connection
-import { createClaudeConnection, type ClaudeConnection } from "../claude/connection"
+import { createClaudeConnection, type ClaudeConnection, type PermissionRequest } from "../claude/connection"
 
 export interface Message {
   role: "user" | "assistant" | "system" | "tool"
@@ -56,11 +67,15 @@ export function App(props: AppProps) {
       <ToastProvider>
         <KeybindProvider>
           <DialogProvider>
-            <AgentProvider initialAgent={props.agent}>
-              <CommandProvider>
-                <AppContent model={props.model} permissionMode={props.permissionMode} />
-              </CommandProvider>
-            </AgentProvider>
+            <SyncProvider>
+              <GitProvider>
+                <AgentProvider initialAgent={props.agent}>
+                  <CommandProvider>
+                    <AppContent model={props.model} permissionMode={props.permissionMode} />
+                  </CommandProvider>
+                </AgentProvider>
+              </GitProvider>
+            </SyncProvider>
           </DialogProvider>
         </KeybindProvider>
       </ToastProvider>
@@ -77,6 +92,8 @@ function AppContent(props: { model: string; permissionMode: string }) {
   const keybind = useKeybind()
   const command = useCommand()
   const agent = useAgent()
+  const sync = useSync()
+  const git = useGit()
 
   // State
   const [messages, setMessages] = createSignal<Message[]>([])
@@ -93,22 +110,33 @@ function AppContent(props: { model: string; permissionMode: string }) {
   const [hasError, setHasError] = createSignal(false)
   const [promptHistory, setPromptHistory] = createSignal<string[]>([])
   const [historyIndex, setHistoryIndex] = createSignal(-1)
+  const [sessionID, setSessionID] = createSignal<string | undefined>()
+  const [sessionTitle, setSessionTitle] = createSignal<string | undefined>()
+
+  // Subagent and split panel state
+  const subagentState = createSubagentPanelState()
+  const splitState = createSplitPanelState()
+
+  // Autocomplete ref
+  let autocompleteRef: AutocompleteRef | undefined
 
   // Claude connection
   let claude: ClaudeConnection | null = null
 
-  onMount(async () => {
-    claude = createClaudeConnection({
-      model: props.model,
-      agent: agent.currentAgent().name,
-      permissionMode: agent.currentAgent().permissionMode,
-    })
+  // Pending permission request
+  const [pendingPermission, setPendingPermission] = createSignal<PermissionRequest | null>(null)
+
+  // Track previous agent for reconnection
+  let previousAgentName = ""
+
+  const setupClaudeHandlers = () => {
+    if (!claude) return
 
     // Set up event handlers
     claude.on("init", (data) => {
       setConnected(true)
       setClaudeVersion(data.claude_code_version || "")
-      toast.success("Connected to Claude")
+      toast.success(`Connected to Claude (${agent.currentAgent().name})`)
     })
 
     claude.on("assistant", (data) => {
@@ -180,11 +208,82 @@ function AppContent(props: { model: string; permissionMode: string }) {
       toast.error(err.message || "An error occurred")
     })
 
+    // Handle permission requests - show qalcode-style dialog
+    claude.on("permission", (req: PermissionRequest) => {
+      setPendingPermission(req)
+      dialog.replace(
+        <PermissionPrompt
+          tool={req.tool}
+          description={req.description}
+          input={req.input}
+          risk={req.risk || "medium"}
+          onAllow={() => {
+            claude?.sendPermissionResponse(req.toolId, true)
+            setPendingPermission(null)
+            dialog.clear()
+          }}
+          onDeny={() => {
+            claude?.sendPermissionResponse(req.toolId, false)
+            setPendingPermission(null)
+            dialog.clear()
+            toast.warning(`Denied ${req.tool}`)
+          }}
+          onAllowSession={() => {
+            // Allow for session (just allow this one for now)
+            claude?.sendPermissionResponse(req.toolId, true)
+            setPendingPermission(null)
+            dialog.clear()
+            toast.info(`Allowed ${req.tool} for session`)
+          }}
+        />
+      )
+    })
+
+    claude.on("close", () => {
+      setConnected(false)
+    })
+  }
+
+  onMount(async () => {
+    const currentAgent = agent.currentAgent()
+    previousAgentName = currentAgent.name
+
+    claude = createClaudeConnection({
+      model: props.model,
+      permissionMode: currentAgent.permissionMode,
+      extraArgs: agent.getClaudeArgs(),
+    })
+
+    setupClaudeHandlers()
+
     // Connect
     try {
       await claude.connect()
     } catch (err: any) {
       toast.error(`Failed to connect: ${err.message}`)
+    }
+  })
+
+  // Reconnect when agent changes
+  createEffect(() => {
+    const currentAgent = agent.currentAgent()
+    if (previousAgentName && previousAgentName !== currentAgent.name) {
+      // Agent changed - reconnect with new settings
+      previousAgentName = currentAgent.name
+
+      if (claude) {
+        toast.info(`Switching to ${currentAgent.name}...`)
+        setConnected(false)
+
+        claude.reconnect({
+          permissionMode: currentAgent.permissionMode,
+          extraArgs: agent.getClaudeArgs(),
+        }).then(() => {
+          setupClaudeHandlers()
+        }).catch((err: any) => {
+          toast.error(`Failed to reconnect: ${err.message}`)
+        })
+      }
     }
   })
 
@@ -231,6 +330,42 @@ function AppContent(props: { model: string; permissionMode: string }) {
       },
     },
     {
+      value: "session.list",
+      label: "Sessions",
+      description: "Browse and manage sessions",
+      category: "Session",
+      onSelect: () => {
+        dialog.replace(<DialogSessionList />)
+      },
+    },
+    {
+      value: "permissions.manage",
+      label: "Permissions",
+      description: "Manage tool permissions",
+      category: "Settings",
+      onSelect: () => {
+        dialog.replace(<DialogPermissions />)
+      },
+    },
+    {
+      value: "mcp.list",
+      label: "MCP Servers",
+      description: "Toggle MCP servers",
+      category: "Settings",
+      onSelect: () => {
+        dialog.replace(<DialogMcp />)
+      },
+    },
+    {
+      value: "lsp.list",
+      label: "LSP Servers",
+      description: "View LSP server status",
+      category: "Settings",
+      onSelect: () => {
+        dialog.replace(<DialogLsp />)
+      },
+    },
+    {
       value: "sidebar.toggle",
       label: "Toggle Sidebar",
       category: "View",
@@ -246,6 +381,21 @@ function AppContent(props: { model: string; permissionMode: string }) {
         setMessages([])
         setShowLogo(true)
         toast.info("Messages cleared")
+      },
+    },
+    {
+      value: "session.new",
+      label: "New Session",
+      description: "Start a new session",
+      category: "Session",
+      onSelect: () => {
+        setMessages([])
+        setTodos([])
+        setUsage({ input: 0, output: 0, cost: 0 })
+        setShowLogo(true)
+        setSessionID(undefined)
+        setSessionTitle(undefined)
+        toast.info("New session started")
       },
     },
     {
@@ -423,6 +573,18 @@ function AppContent(props: { model: string; permissionMode: string }) {
             isLoading={isLoading()}
             hasError={hasError()}
             claudeVersion={claudeVersion()}
+            gitBranch={git.branch() || undefined}
+            gitAhead={git.info().ahead}
+            gitBehind={git.info().behind}
+            modifiedFiles={git.modifiedFiles().map((f) => ({
+              path: f.path,
+              additions: f.additions || 0,
+              deletions: f.deletions || 0,
+            }))}
+            sessionTitle={sessionTitle()}
+            sessionID={sessionID()}
+            mcp={sync.data.mcp}
+            lsp={sync.data.lsp}
           />
         </Show>
 

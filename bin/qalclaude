@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 # QalClaude launcher - OpenTUI version
 cd "$(dirname "$0")/.."
-exec bun run src/index.tsx "$@"
+exec bun run src/main.tsx "$@"

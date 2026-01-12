@@ -7,8 +7,9 @@
     "qalclaude": "./bin/qalclaude"
   },
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target node",
+    "start": "bun run src/main.tsx",
+    "dev": "bun run --watch src/main.tsx",
+    "build": "bun build src/main.tsx --outdir dist --target node",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

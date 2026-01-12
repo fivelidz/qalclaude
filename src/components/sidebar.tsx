@@ -1,10 +1,23 @@
-// QalClaude Enhanced Sidebar Component
+// QalClaude Enhanced Sidebar Component with MCP/LSP/Git Integration
 
-import { createSignal, Show, For } from "solid-js"
+import { createSignal, createMemo, Show, For } from "solid-js"
 import { useTheme, defaultTheme } from "../context/theme"
 import { useAgent, type Agent } from "../context/agents"
 import { Animation } from "./animation"
 import { TodoList } from "./tool-output/todo"
+
+// MCP Status type
+interface McpStatus {
+  status: "connected" | "failed" | "disabled" | "needs_auth" | "needs_client_registration"
+  error?: string
+}
+
+// LSP Status type
+interface LspStatus {
+  id: string
+  status: "connected" | "error"
+  root?: string
+}
 
 interface SidebarProps {
   agents: Agent[]
@@ -16,7 +29,16 @@ interface SidebarProps {
   hasError: boolean
   claudeVersion?: string
   gitBranch?: string
+  gitAhead?: number
+  gitBehind?: number
   modifiedFiles?: Array<{ path: string; additions: number; deletions: number }>
+  sessionTitle?: string
+  sessionCreated?: number
+  sessionID?: string
+  mcp?: Record<string, McpStatus>
+  lsp?: LspStatus[]
+  parentSession?: { id: string; title: string }
+  subagentInfo?: { agentType: string; shortName: string; taskNumber: number }
 }
 
 export function Sidebar(props: SidebarProps) {
@@ -27,6 +49,8 @@ export function Sidebar(props: SidebarProps) {
     todos: true,
     git: false,
     files: false,
+    mcp: true,
+    lsp: false,
   })
 
   let theme = defaultTheme
@@ -68,49 +92,106 @@ export function Sidebar(props: SidebarProps) {
 
   const currentAgent = () => props.agents[props.currentAgent]
 
+  // MCP entries
+  const mcpEntries = createMemo(() =>
+    props.mcp ? Object.entries(props.mcp).sort(([a], [b]) => a.localeCompare(b)) : []
+  )
+
+  // Format time
+  const formatTime = (timestamp?: number) => {
+    if (!timestamp) return ""
+    const date = new Date(timestamp)
+    const now = new Date()
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    }
+    return date.toLocaleDateString([], { month: "short", day: "numeric" })
+  }
+
+  // MCP status color
+  const getMcpStatusColor = (status: McpStatus["status"]) => {
+    switch (status) {
+      case "connected":
+        return theme.success
+      case "failed":
+        return theme.error
+      case "disabled":
+        return theme.textMuted
+      case "needs_auth":
+        return theme.warning
+      case "needs_client_registration":
+        return theme.error
+      default:
+        return theme.textMuted
+    }
+  }
+
   return (
     <box
       flexDirection="column"
-      width={30}
+      width={35}
       borderStyle="single"
       borderColor={theme.border}
       paddingLeft={1}
       paddingRight={1}
     >
       {/* Animation Display */}
-      <box
-        flexDirection="column"
-        alignItems="center"
-        marginBottom={1}
-      >
+      <box flexDirection="column" alignItems="center" marginBottom={1}>
         <Animation state={getAnimationState()} compact={!showFullAnimation()} />
       </box>
 
       {/* Current Agent Banner */}
-      <box
-        marginBottom={1}
-        paddingLeft={1}
-      >
+      <box marginBottom={1} paddingLeft={1}>
         <text fg={currentAgent()?.color || theme.primary}>
           <b>{currentAgent()?.name?.toUpperCase()}</b>
         </text>
         <text fg={theme.textMuted}> - {currentAgent()?.description}</text>
       </box>
 
+      {/* Active Subagent Banner */}
+      <Show when={props.subagentInfo}>
+        <box paddingLeft={1} paddingRight={1} marginBottom={1}>
+          <text fg={theme.accent}>
+            <b>#{props.subagentInfo!.taskNumber} @{props.subagentInfo!.agentType}</b>
+          </text>
+          <text fg={theme.text}>
+            <b> {props.subagentInfo!.shortName}</b>
+          </text>
+        </box>
+      </Show>
+
       {/* Location */}
-      <CollapsibleSection
-        title="Location"
-        icon="📍"
-        expanded={true}
-        theme={theme}
-      >
+      <CollapsibleSection title="Location" icon="📍" expanded={true} theme={theme}>
         <text fg={theme.text}>{dirName()}</text>
         <Show when={props.gitBranch}>
           <box>
-            <text fg={theme.secondary}>⎇ {props.gitBranch}</text>
+            <text fg={theme.success}>⎇ {props.gitBranch}</text>
+            <Show when={props.gitAhead}>
+              <text fg={theme.textMuted}> ↑{props.gitAhead}</text>
+            </Show>
+            <Show when={props.gitBehind}>
+              <text fg={theme.textMuted}> ↓{props.gitBehind}</text>
+            </Show>
           </box>
         </Show>
       </CollapsibleSection>
+
+      {/* Session Info */}
+      <Show when={props.sessionTitle}>
+        <CollapsibleSection title="Session" icon="💬" expanded={true} theme={theme}>
+          <text fg={theme.text}>
+            <b>{props.sessionTitle}</b>
+          </text>
+          <Show when={props.sessionCreated}>
+            <text fg={theme.textMuted}>{formatTime(props.sessionCreated)}</text>
+          </Show>
+          <Show when={props.parentSession}>
+            <box>
+              <text fg={theme.secondary}>◆ Parent: {props.parentSession!.title}</text>
+            </box>
+          </Show>
+        </CollapsibleSection>
+      </Show>
 
       {/* Agents */}
       <CollapsibleSection
@@ -125,7 +206,8 @@ export function Sidebar(props: SidebarProps) {
           {(agent, i) => (
             <box>
               <text fg={i() === props.currentAgent ? agent.color : theme.textMuted}>
-                {i() === props.currentAgent ? "▸ " : "  "}{agent.name}
+                {i() === props.currentAgent ? "▸ " : "  "}
+                {agent.name}
               </text>
             </box>
           )}
@@ -150,6 +232,72 @@ export function Sidebar(props: SidebarProps) {
         <text fg={theme.success}>${props.usage.cost.toFixed(4)}</text>
       </CollapsibleSection>
 
+      {/* MCP Servers */}
+      <Show when={mcpEntries().length > 0}>
+        <CollapsibleSection
+          title="MCP"
+          icon="🔌"
+          expanded={expandedSections().mcp}
+          onToggle={() => toggleSection("mcp")}
+          suffix={<text fg={theme.textMuted}>({mcpEntries().length})</text>}
+          theme={theme}
+        >
+          <For each={mcpEntries()}>
+            {([name, status]) => (
+              <box flexDirection="row" gap={1}>
+                <text fg={getMcpStatusColor(status.status)}>•</text>
+                <text fg={theme.text}>{name}</text>
+                <text fg={theme.textMuted}>
+                  {status.status === "connected"
+                    ? "Connected"
+                    : status.status === "failed"
+                    ? status.error || "Failed"
+                    : status.status === "disabled"
+                    ? "Disabled"
+                    : status.status}
+                </text>
+              </box>
+            )}
+          </For>
+        </CollapsibleSection>
+      </Show>
+
+      {/* LSP Servers */}
+      <Show when={props.lsp && props.lsp.length > 0}>
+        <CollapsibleSection
+          title="LSP"
+          icon="🔧"
+          expanded={expandedSections().lsp}
+          onToggle={() => toggleSection("lsp")}
+          suffix={<text fg={theme.textMuted}>({props.lsp!.length})</text>}
+          theme={theme}
+        >
+          <For each={props.lsp}>
+            {(lsp) => (
+              <box flexDirection="row" gap={1}>
+                <text fg={lsp.status === "connected" ? theme.success : theme.error}>
+                  {lsp.status === "connected" ? "●" : "!"}
+                </text>
+                <text fg={theme.textMuted}>
+                  {lsp.id} {lsp.root}
+                </text>
+              </box>
+            )}
+          </For>
+        </CollapsibleSection>
+      </Show>
+      <Show when={!props.lsp || props.lsp.length === 0}>
+        <CollapsibleSection
+          title="LSP"
+          icon="🔧"
+          expanded={false}
+          onToggle={() => toggleSection("lsp")}
+          theme={theme}
+        >
+          <text fg={theme.textMuted}>LSPs activate as files are read</text>
+        </CollapsibleSection>
+      </Show>
+
       {/* Todo List */}
       <CollapsibleSection
         title="Tasks"
@@ -163,7 +311,17 @@ export function Sidebar(props: SidebarProps) {
         }
         theme={theme}
       >
-        <TodoList todos={props.todos as any} />
+        <Show
+          when={props.todos.length > 0}
+          fallback={
+            <box flexDirection="column">
+              <text fg={theme.textMuted}>No active tasks</text>
+              <text fg={theme.textMuted}>Claude adds tasks here</text>
+            </box>
+          }
+        >
+          <TodoList todos={props.todos as any} />
+        </Show>
       </CollapsibleSection>
 
       {/* Modified Files */}
@@ -178,10 +336,10 @@ export function Sidebar(props: SidebarProps) {
         >
           <For each={props.modifiedFiles!.slice(0, 5)}>
             {(file) => (
-              <box>
+              <box flexDirection="row" gap={1}>
                 <text fg={theme.text}>{file.path.split("/").pop()}</text>
-                <text fg={theme.diff.added}> +{file.additions}</text>
-                <text fg={theme.diff.removed}> -{file.deletions}</text>
+                <text fg={theme.diff.added}>+{file.additions}</text>
+                <text fg={theme.diff.removed}>-{file.deletions}</text>
               </box>
             )}
           </For>
@@ -192,12 +350,7 @@ export function Sidebar(props: SidebarProps) {
       </Show>
 
       {/* Keyboard Shortcuts */}
-      <CollapsibleSection
-        title="Keys"
-        icon="⌨️"
-        expanded={false}
-        theme={theme}
-      >
+      <CollapsibleSection title="Keys" icon="⌨️" expanded={false} theme={theme}>
         <text fg={theme.textMuted}>Tab: agents</text>
         <text fg={theme.textMuted}>^K: commands</text>
         <text fg={theme.textMuted}>^B: sidebar</text>
@@ -209,7 +362,7 @@ export function Sidebar(props: SidebarProps) {
       {/* Footer */}
       <box flexGrow={1} />
       <box marginTop={1} flexDirection="column">
-        <text fg={theme.textMuted}>{dirName()}</text>
+        <text fg={theme.textMuted}>{props.cwd}</text>
         <box>
           <text fg={theme.primary}>Qal</text>
           <text fg={theme.secondary}>Claude</text>
@@ -236,14 +389,15 @@ interface CollapsibleSectionProps {
 function CollapsibleSection(props: CollapsibleSectionProps) {
   const [localExpanded, setLocalExpanded] = createSignal(props.expanded ?? true)
 
-  const isExpanded = () => props.onToggle ? props.expanded : localExpanded()
-  const toggle = () => props.onToggle ? props.onToggle() : setLocalExpanded((e) => !e)
+  const isExpanded = () => (props.onToggle ? props.expanded : localExpanded())
+  const toggle = () => (props.onToggle ? props.onToggle() : setLocalExpanded((e) => !e))
 
   return (
     <box flexDirection="column" marginTop={1}>
       <box>
         <text fg={props.theme.primary}>
-          {props.icon ? `${props.icon} ` : ""}<b>{props.title}</b>
+          {props.icon ? `${props.icon} ` : ""}
+          <b>{props.title}</b>
         </text>
         <text fg={props.theme.textMuted}> {isExpanded() ? "▾" : "▸"}</text>
         {props.suffix}
@@ -256,3 +410,6 @@ function CollapsibleSection(props: CollapsibleSectionProps) {
     </box>
   )
 }
+
+// Export CollapsibleSection for use in other components
+export { CollapsibleSection }
